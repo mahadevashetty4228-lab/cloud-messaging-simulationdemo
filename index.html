@@ -1,22 +1,269 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cloud Messaging Integration</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            padding: 20px;
-        }
-        h1 {
-            color: #2c3e50;
-        }
-    </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Cloud Messaging Integration – Interactive Demo</title>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#121a2b; --ink:#e6ecff; --muted:#9fb0d9;
+    --ok:#43d67f; --warn:#ffcf5a; --bad:#ff6b6b; --accent:#7aa2ff;
+    --wire:#2b3a5c; --card:#0f172a; --glow: 0 0 0 2px rgba(122,162,255,.15);
+  }
+  *{box-sizing:border-box;font-family: ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;}
+  body{margin:0;background:radial-gradient(1200px 700px at 10% 0%,#0e1630,transparent),var(--bg);color:var(--ink);}
+  header{padding:28px 20px 10px; text-align:center;}
+  header h1{margin:0;font-size:28px;letter-spacing:.3px;}
+  header p{margin:6px 0 0;color:var(--muted)}
+
+  .wrap{max-width:1100px;margin:0 auto;padding:18px;}
+  .board{
+    background:linear-gradient(180deg,rgba(255,255,255,.03),transparent);
+    border:1px solid #1d2844;border-radius:18px;padding:18px;
+    display:grid;grid-template-columns:1.2fr .8fr;gap:16px;
+  }
+  .net{
+    border:1px solid #1e2a4b;background:var(--panel);border-radius:16px;padding:16px;position:relative;
+    min-height:420px;overflow:hidden;
+  }
+  .controls{
+    border:1px solid #1e2a4b;background:var(--panel);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px;
+  }
+
+  /* nodes */
+  .node{
+    position:absolute; min-width:170px; text-align:center; padding:14px 12px;
+    background:#111a33;border:1px solid #22325d;border-radius:14px; box-shadow: var(--glow);
+  }
+  .node h3{margin:0 0 6px;font-size:16px}
+  .node .sub{font-size:12px;color:var(--muted)}
+
+  /* positions */
+  .sns {top:28px; left:26px;}
+  .sqs {top:170px; left:26px;}
+  .dlq {top:310px; left:26px;}
+  .worker {top:120px; right:26px;}
+  .db {top:300px; right:26px;}
+
+  /* wires */
+  .wire{position:absolute;border-top:2px dashed var(--wire);height:0}
+  .arrow::after{
+    content:"";position:absolute;right:-6px;top:-5px;border:6px solid transparent;border-left-color:var(--wire);
+    filter:drop-shadow(0 0 2px #0b132a);
+  }
+  .w1{left:200px; right:220px; top:60px;}      /* SNS -> SQS */
+  .w2{left:200px; right:220px; top:206px;}     /* SQS -> Worker */
+  .w3{left:200px; right:220px; top:346px;}     /* DLQ -> (no arrow end) */
+  .w4{right:200px; left:220px; top:336px;}     /* Worker -> DB */
+
+  /* message pills */
+  .pill{
+    position:absolute; padding:6px 10px; border-radius:999px; font-size:12px;
+    background:var(--accent); color:#001028; box-shadow:0 4px 14px rgba(122,162,255,.35);
+    transform:translate(-50%,-50%); pointer-events:none; white-space:nowrap;
+  }
+  .pill.ok{background:var(--ok); color:#042414}
+  .pill.err{background:var(--bad); color:#2a0606}
+  .pill.retry{background:var(--warn); color:#332300}
+
+  /* controls */
+  .btn{
+    border:1px solid #2a3a66; background:#0f1730; color:var(--ink); padding:10px 12px;
+    border-radius:12px; cursor:pointer; font-weight:600; transition:.15s;
+  }
+  .btn:hover{transform:translateY(-1px); box-shadow:0 8px 22px rgba(0,0,0,.25)}
+  .btn.secondary{background:#101a35a8}
+  .btn.danger{background:#2b0f16;border-color:#5b1d29}
+  .stack{display:flex;gap:8px;flex-wrap:wrap}
+  .row{display:flex;align-items:center;gap:10px}
+  .label{color:var(--muted);font-size:13px}
+  input[type="range"]{width:100%}
+  .statgrid{
+    display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px
+  }
+  .stat{
+    background:#0f172a;border:1px solid #203055;border-radius:12px;padding:10px 12px
+  }
+  .stat b{display:block;font-size:22px;margin-top:4px}
+
+  .log{
+    height:240px; overflow:auto; background:#0c142b;border:1px solid #1e2a4b;border-radius:12px;
+    padding:10px;font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; line-height:1.35
+  }
+  .muted{color:var(--muted)}
+  footer{color:var(--muted);text-align:center;font-size:12px;margin:10px 0 30px}
+</style>
 </head>
 <body>
-    <h1>Cloud Messaging Integration</h1>
-    <p>This is a demo project showing cloud messaging integration using AWS SNS/SQS.</p>
-</body>
-</html>
+  <header>
+    <h1>Cloud Messaging Integration – Interactive Simulation</h1>
+    <p>Simulates SNS → SQS → Worker → Database with batching, retries, and a DLQ. No real cloud calls — pure front-end.</p>
+  </header>
+
+  <div class="wrap">
+    <div class="board">
+      <!-- NETWORK -->
+      <section class="net" id="net">
+        <!-- Wires -->
+        <div class="wire arrow w1"></div>
+        <div class="wire arrow w2"></div>
+        <div class="wire arrow w4"></div>
+        <div class="wire w3"></div>
+
+        <!-- Nodes -->
+        <div class="node sns">
+          <h3>SNS Topic</h3>
+          <div class="sub">Publish events</div>
+        </div>
+        <div class="node sqs">
+          <h3>SQS Queue</h3>
+          <div class="sub" id="qDepth">Depth: 0</div>
+        </div>
+        <div class="node dlq">
+          <h3>DLQ</h3>
+          <div class="sub" id="dlqDepth">Depth: 0</div>
+        </div>
+        <div class="node worker">
+          <h3>Lambda Worker</h3>
+          <div class="sub">Processes messages</div>
+        </div>
+        <div class="node db">
+          <h3>Database</h3>
+          <div class="sub" id="dbCount">Writes: 0</div>
+        </div>
+      </section>
+
+      <!-- CONTROLS -->
+      <aside class="controls">
+        <div class="stack">
+          <button class="btn" id="sendOne">Send 1 Message</button>
+          <button class="btn" id="sendBurst">Send 10 Message Burst</button>
+          <button class="btn secondary" id="toggleAuto">Start Auto-Publish</button>
+          <button class="btn danger" id="clear">Clear State</button>
+        </div>
+
+        <div class="row">
+          <span class="label">Failure rate (worker):</span>
+          <input id="failRate" type="range" min="0" max="90" value="20"/>
+          <span class="label" id="failRateLabel">20%</span>
+        </div>
+        <div class="row">
+          <span class="label">Processing speed:</span>
+          <input id="speed" type="range" min="200" max="2000" value="900"/>
+          <span class="label" id="speedLabel">900 ms/msg</span>
+        </div>
+
+        <div class="statgrid">
+          <div class="stat"><span class="muted">Published</span><b id="published">0</b></div>
+          <div class="stat"><span class="muted">Processed OK</span><b id="processedOK">0</b></div>
+          <div class="stat"><span class="muted">Retries</span><b id="retries">0</b></div>
+        </div>
+
+        <div class="log" id="log"></div>
+      </aside>
+    </div>
+    <footer>Tip: change failure rate to see retries, and watch the DLQ fill if messages fail too many times.</footer>
+  </div>
+
+<script>
+/* ---------- Simple in-browser simulation ---------- */
+const state = {
+  q: [], dlq: [], published: 0, processedOK: 0, retries: 0, dbWrites: 0,
+  maxAttempts: 3, autoTimer: null, speed: 900, failRate: 0.20,
+};
+
+const els = {
+  qDepth: document.getElementById('qDepth'),
+  dlqDepth: document.getElementById('dlqDepth'),
+  dbCount: document.getElementById('dbCount'),
+  published: document.getElementById('published'),
+  processedOK: document.getElementById('processedOK'),
+  retries: document.getElementById('retries'),
+  log: document.getElementById('log'),
+  toggleAuto: document.getElementById('toggleAuto'),
+  net: document.getElementById('net'),
+  failRate: document.getElementById('failRate'),
+  failRateLabel: document.getElementById('failRateLabel'),
+  speed: document.getElementById('speed'),
+  speedLabel: document.getElementById('speedLabel')
+};
+
+const randId = () => Math.random().toString(36).slice(2,8);
+
+/* UI helpers */
+function setDepths(){
+  els.qDepth.textContent = Depth: ${state.q.length};
+  els.dlqDepth.textContent = Depth: ${state.dlq.length};
+  els.dbCount.textContent = Writes: ${state.dbWrites};
+  els.published.textContent = state.published;
+  els.processedOK.textContent = state.processedOK;
+  els.retries.textContent = state.retries;
+}
+function log(msg){
+  const t = new Date().toLocaleTimeString();
+  els.log.insertAdjacentHTML('afterbegin', [${t}] ${msg}\n);
+}
+
+/* Visual: animate a “pill” along a wire */
+function flyPill(text, from, toY, duration=850, variant=""){
+  const p = document.createElement('div');
+  p.className = pill ${variant};
+  p.textContent = text;
+  // find start X based on node class
+  const start = els.net.querySelector('.'+from);
+  const rect = start.getBoundingClientRect();
+  const netRect = els.net.getBoundingClientRect();
+  let x = rect.left - netRect.left + rect.width + 10;
+  let y = toY;
+  p.style.left = x + 'px'; p.style.top = y + 'px';
+  els.net.appendChild(p);
+  // animate to right side
+  const endX = els.net.clientWidth - 220;
+  const t0 = performance.now();
+  requestAnimationFrame(function step(ts){
+    const k = Math.min(1,(ts-t0)/duration);
+    p.style.left = (x + (endX-x)*k) + 'px';
+    if(k<1) requestAnimationFrame(step); else setTimeout(()=>p.remove(), 300);
+  });
+}
+
+/* SNS publish -> SQS enqueue */
+function publish(n=1){
+  for(let i=0;i<n;i++){
+    const m = { id: randId(), body:order#${randId()}, attempts:0 };
+    state.q.push(m); state.published++;
+    flyPill(m.id, 'sns', 206, 700, ""); // along w2 height baseline from SQS position for consistency
+    log(SNS published message ${m.id} -> SQS);
+  }
+  setDepths();
+  maybeKickWorker();
+}
+
+/* Worker loop */
+let working = false;
+function maybeKickWorker(){
+  if(working) return;
+  working = true;
+  (async function loop(){
+    while(state.q.length){
+      const m = state.q.shift();
+      setDepths();
+      // animate SQS -> Worker
+      flyPill(m.id, 'sqs', 206, 600, "");
+      await sleep(state.speed);
+      const fail = Math.random() < state.failRate;
+      if(fail){
+        m.attempts++;
+        if(m.attempts < state.maxAttempts){
+          state.retries++; state.q.push(m);
+          flyPill(m.id, 'worker', 206, 600, "retry");
+          log(Worker failed ${m.id} (attempt ${m.attempts}). Re-queued.);
+        }else{
+          state.dlq.push(m);
+          flyPill(m.id, 'sqs', 346, 600, "err");
+          log(Worker failed ${m.id} permanently -> DLQ.);
+        }
+      }else{
+        state.processedOK++; state.dbWrites++;
+        flyPill(m.id, 'worker', 336, 700, "ok"); // Worker -> DB
+        log(`Processed ${m.id} ✅ stored in DB
